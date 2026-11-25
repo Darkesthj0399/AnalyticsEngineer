@@ -2,14 +2,39 @@ import duckdb
 con = duckdb.connect("data/berka.duckdb", read_only=True)
 
 consulta = """
-    with cte as (SELECT account_id, date, type, amount, (ROW_NUMBER() OVER 
-    (PARTITION BY account_id ORDER BY date asc, trans_id asc) )as nro_trans
-    FROM trans)
+    with cte as (SELECT account_id, strptime(CAST(date AS VARCHAR), '%y%m%d') as date, type, balance, (ROW_NUMBER() OVER 
+    (PARTITION BY account_id ORDER BY date desc, trans_id desc) )as nro_trans
+    FROM trans
+    where year(strptime(CAST(date AS VARCHAR), '%y%m%d')) = 1997)
 
-    select  account_id, date, type, amount from cte
-    where nro_trans =1 and account_id =576
-    order by account_id asc
+   ,cte1 as(select  account_id, date, type, balance from cte
+    where nro_trans =1 
+    order by account_id asc)
+
+    select a.account_id
+    from account a
+    where not exists (
+    select 1 from cte1 c
+    where c.account_id = a.account_id
+)
 """
+
+consulta3 = """
+    SELECT COUNT(*) FROM (
+  SELECT account_id FROM trans
+  WHERE date = 971231
+  GROUP BY account_id HAVING COUNT(*) > 1
+);
+"""
+
+consulta4 = """
+    SELECT account_id, MIN(date) AS primera, MAX(date) AS ultima, COUNT(*) AS movimientos
+FROM trans
+WHERE account_id IN (138, 799, 1720, 2029)
+GROUP BY account_id;
+"""
+
+
 
 consulta1 = """
     select  account_id, date, type, amount from trans
@@ -39,6 +64,12 @@ lag1 = """
 
 """
 
+consulta5 = """   
+        SELECT account_id, date FROM account
+WHERE account_id IN (138, 799, 1720, 2029);
+
+
+"""
 
 types = """   
         select distinct(type) from trans
@@ -46,5 +77,5 @@ types = """
 """
 #select count (*) from cte_2
 #        where ABS(balance - saldo_esperado) > 0.01
-con.sql(lag1).show()
+con.sql(consulta4).show()
 con.close()
