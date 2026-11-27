@@ -1,38 +1,51 @@
+from typing import Literal
 from anthropic import Anthropic
+from pydantic import BaseModel, ValidationError
 
-# 1. EL CLIENTE (el mesero): se conecta y busca ANTHROPIC_API_KEY por su cuenta
+# 1. EL CLIENTE
 client = Anthropic()
 
+# 2. EL MOLDE: los campos y valores permitidos
+class Clasificacion(BaseModel):
+    motivo: Literal["insistencia_comercial", "producto", "atencion", "cobros", "otro", "no_aplica"]
+    sentimiento: Literal["positivo", "negativo", "mixto", "no_aplica"]
 
+# 3. LAS REGLAS
 reglas = """Eres un clasificador de sentimiento de las respuestas de los clientes a las llamadas que realiza un operario bancario.
-Clasifica los motivos por los cuales se da la calificación, pueden ser SOLO un motivo de esta lista: insistencia_comercial, producto, atencion, cobros, otro y no_aplica. Otro lo utilizas cuando es comentario de un cliente pero no calza dentro de las demas categorias.
-Y el sentimiento puede ser SOLO UNO  de esta lista:
-positivo, negativo, mixto y no_aplica
+Clasifica el motivo de la calificación. Puede ser SOLO UNO de esta lista: insistencia_comercial, producto, atencion, cobros, otro, no_aplica. Usa otro cuando es un comentario de un cliente que no calza en las demás categorías.
+El sentimiento puede ser SOLO UNO de esta lista: positivo, negativo, mixto, no_aplica.
 
-Responde SOLO con una línea en este formato exacto:
-motivo|sentimiento
+Responde SOLO con este JSON, sin texto antes ni después:
+{"motivo": "...", "sentimiento": "..."}
 
-No agregues explicación, saludo ni puntuación extra.
-Si el comentario no es una evaluación de una llamada, responde: no_aplica|no_aplica"""
+Si el comentario no es una evaluación de una llamada, responde:
+{"motivo": "no_aplica", "sentimiento": "no_aplica"}"""
 
+# 4. PEDIDO + VALIDACIÓN + REINTENTO
+def clasificar(comentario, max_intentos=2):
+    for intento in range(max_intentos):
+        respuesta = client.messages.create(
+            model="claude-haiku-5-5",
+            max_tokens=50,
+            thinking={"type": "disabled"},
+            system=reglas,
+            messages=[{"role": "user", "content": comentario}],
+        )
+        texto = respuesta.content[0].text
+        print(f"Intento {intento + 1} | stop_reason: {respuesta.stop_reason} | "
+              f"tokens entrada: {respuesta.usage.input_tokens}, salida: {respuesta.usage.output_tokens}")
+        try:
+            return Clasificacion.model_validate_json(texto)
+        except ValidationError as e:
+            print(f"Falló la validación: {e}")
+    return None
 
-comentario = "¿qué hora es en Tokio?"
+# 5. PRUEBA
+comentarios = [
+    "¿qué hora es en Tokio?",
+    "El operador me llamó tres veces en el día para ofrecerme un préstamo, ya no quiero que me llamen.",
+]
 
-# 2. EL PEDIDO
-respuesta = client.messages.create(
-    model="claude-haiku-5-5",
-    max_tokens=20,
-    thinking={"type": "disabled"},
-    system= reglas,
-    messages=[
-        {"role": "user", "content":comentario},
-    ],
-)
-
-# 3. LA BANDEJA
-print([bloque.type for bloque in respuesta.content])
-print("stop_reason:", respuesta.stop_reason)
-for bloque in respuesta.content:
-    if bloque.type == "text":
-        print(bloque.text)
-print("Tokens entrada:", respuesta.usage.input_tokens, "| salida:", respuesta.usage.output_tokens) # tokens de entrada y de salida
+for c in comentarios:
+    resultado = clasificar(c)
+    print(c, "→", resultado, "\n")

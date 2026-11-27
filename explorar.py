@@ -75,7 +75,16 @@ types = """
         select distinct(type) from trans
 
 """
+
+
+query1 = """   
+        select  count(distinct client_id) from card c right join disp d
+        on c.disp_id = d.disp_id
+        where c.disp_id is null and d.type ='OWNER'
+
+
+"""
 #select count (*) from cte_2
 #        where ABS(balance - saldo_esperado) > 0.01
-con.sql(consulta4).show()
+con.sql(query1).show()
 con.close()
